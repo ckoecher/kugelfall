@@ -79,6 +79,8 @@ void setup() {
   myservo.write(0);
   Serial.begin(9600);
   delay(1000);
+  
+  //Hallo
 }
 
 /**
