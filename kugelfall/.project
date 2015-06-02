@@ -24,4 +24,11 @@
 		<nature>org.eclipse.cdt.managedbuilder.core.managedBuildNature</nature>
 		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>arduino</name>
+			<type>2</type>
+			<location>/usr/share/arduino</location>
+		</link>
+	</linkedResources>
 </projectDescription>
