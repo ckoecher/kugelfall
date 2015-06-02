@@ -8,6 +8,8 @@
 #include <Servo.h> 
 Servo myservo;
 
+const int maxNumPhotoValues = 7;
+
 enum ControllerState {
   IDLE,
   WAIT_FOR_MEMORY,
@@ -39,11 +41,8 @@ struct Memory {
   MemoryState state;
   int photoLastIndex;
   int photoCount; // 0 initial; 1-6: x-ter Photowert nach letztem Hallwert
-  timedValue photoValues[7]; //TODO; wie viele?
+  timedValue photoValues[maxNumPhotoValues]; //TODO; wie viele?
   timedValue hallValue; //TODO: wie viele?
-  timedValue velocity[2]; //TODO: hier oder in Approximator???
-  timedValue acceleration;
-  timedValue angle;
 };
 
 /**
@@ -52,6 +51,9 @@ struct Memory {
  **/
 struct Approximator {
   bool isValid;
+  timedValue velocity[2]; //TODO: hier oder in Approximator???
+  timedValue acceleration;
+  timedValue angle;
   int nextDropTime;
 };
 
@@ -66,6 +68,7 @@ const int pin_out_led2 = 13;
 int val_trigger = 0;
 int val_photo = 0;
 int val_hall = 0;
+int val_millis = 0;
 int pos = 0;
 int time_start = 0;
 int time_end = 0;
@@ -112,7 +115,7 @@ void loop() {
 //    drop();
 //  }
   readInputs();
-  // TODO Update Memory
+  updateMemory();
   switch(defaultControllerState) {
     case IDLE:
       if(val_trigger == HIGH) {
@@ -127,15 +130,15 @@ void loop() {
         break;
       }
     case WAIT_FOR_APPROX:
-      // TODO APPROXIMIEREN-Aufruf
+      // TODO APPROXIMIEREN-Aufruf, update memory?
       if(defaultApprox.isValid) {
         defaultControllerState = CALC_WAIT_DROP;
       } else {
         break;
       }
     case CALC_WAIT_DROP:
-      // TODO calc drop time
-      // TODO wait for drop (and update) -> WAIT_FOR_APPROX?
+      // TODO calc drop time, update memory?
+      // TODO wait for drop (and update MEMORY) -> WAIT_FOR_APPROX?
       // TODO drop -> defaultControllerState = IDLE;
       break;
   }
@@ -145,33 +148,10 @@ void loop() {
  * Werte einlesen.
  **/
 void readInputs() {
+  val_millis = millis();
   val_trigger = digitalRead(pin_in_trigger);
   val_photo = digitalRead(pin_in_photo);
   val_hall = digitalRead(pin_in_hall);
-}
-
-/**
- * Initialisiere den Wertespeicher.
- **/
-void initMemory() {
-  defaultMemory.state = INIT;
-  defaultMemory.photoLastIndex = 6;
-  defaultMemory.photoCount = 0;
-  digitalWrite(pin_out_led1, LOW);
-  for(int i=0; i<7; i++) {
-    defaultMemory.photoValues[i].time = -1;
-    //defaultMemory.photoValues[i].value = -1.0;
-  }
-  defaultMemory.hallValue.time = -1;
-  for(int i=0; i<2; i++) {
-    defaultMemory.velocity[i].time = -1;
-  }
-  defaultMemory.acceleration.time = -1;
-  defaultMemory.angle.time = -1;  
-  //TODO
-  
-  //defaultMemory.isReady = true;
-  //digitalWrite(pin_out_led1, HIGH);
 }
 
 /**
@@ -179,7 +159,80 @@ void initMemory() {
  **/
 void initApproximator() {
   defaultApprox.isValid = false;
+  for(int i=0; i<2; i++) {
+    defaultApprox.velocity[i].time = -1;
+  }
+  defaultApprox.acceleration.time = -1;
+  defaultApprox.angle.time = -1;  
   defaultApprox.nextDropTime = -1;
+}
+
+/**
+ * Initialisiere den Wertespeicher.
+ **/
+void initMemory() {
+  defaultMemory.state = INIT;
+  defaultMemory.photoLastIndex = maxNumPhotoValues-1;
+  defaultMemory.photoCount = 0;
+  digitalWrite(pin_out_led1, LOW);
+  for(int i=0; i<7; i++) {
+    defaultMemory.photoValues[i].time = -1;
+    //defaultMemory.photoValues[i].value = -1.0;
+  }
+  defaultMemory.hallValue.time = millis();
+  defaultMemory.hallValue.value = digitalRead(pin_in_hall);
+  
+  //TODO
+  //defaultMemory.isReady = true;
+  //digitalWrite(pin_out_led1, HIGH);
+}
+
+/**
+ * Aktualisiere den Wertespeicher.
+ **/
+void updateMemory() {
+  switch(defaultMemory.state) {
+    case INIT:
+      if(val_photo != (int)defaultMemory.photoValues[defaultMemory.photoLastIndex].value) {
+        addPhotoValue();
+      }
+      if((defaultMemory.photoCount > 0) && (val_hall != (int)defaultMemory.hallValue.value)) {
+        defaultMemory.hallValue.time = val_millis;
+        defaultMemory.hallValue.value = val_hall;
+        defaultMemory.photoCount = 0;
+        defaultMemory.state = NOT_READY;
+      }
+      break;
+    case NOT_READY:
+      if(val_hall != (int)defaultMemory.hallValue.value) {
+        defaultMemory.hallValue.time = val_millis; // TODO ZEITPUNKT???
+        defaultMemory.hallValue.value = val_hall;
+      }
+      if(val_photo != (int)defaultMemory.photoValues[defaultMemory.photoLastIndex].value) {
+        addPhotoValue();
+        defaultMemory.state = READY;
+        digitalWrite(pin_out_led1, HIGH);
+      }
+      break;
+    case READY:
+      if(val_photo != (int)defaultMemory.photoValues[defaultMemory.photoLastIndex].value) {
+        addPhotoValue();
+      }
+      if(val_hall != (int)defaultMemory.hallValue.value) {
+        defaultMemory.hallValue.time = val_millis;
+        defaultMemory.hallValue.value = val_hall;
+        defaultMemory.photoCount = 0;
+        defaultMemory.state = NOT_READY;
+        digitalWrite(pin_out_led1, LOW);
+      }
+  }
+}
+
+void addPhotoValue() {
+  defaultMemory.photoLastIndex = (defaultMemory.photoLastIndex + 1) % maxNumPhotoValues;
+  defaultMemory.photoValues[defaultMemory.photoLastIndex].time = val_millis;
+  defaultMemory.photoValues[defaultMemory.photoLastIndex].value = val_photo;
+  defaultMemory.photoCount++;
 }
 
 /**
@@ -206,4 +259,15 @@ void drop() {
   myservo.write(0);
   delay(50);
   myservo.write(17);
+}
+
+/**
+ * Verzögerung inklusive Erfassung der Messwerte
+ **/
+void busyDelay(int time) {
+  int waitUntil = millis() + time;
+  while(millis() < waitUntil) {
+    readInputs();
+    // TODO Update Memory
+  }
 }
