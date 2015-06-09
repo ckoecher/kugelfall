@@ -12,8 +12,9 @@ const int maxNumPhotoValues = 7;
 
 enum ControllerState {
   IDLE,
-  WAIT_FOR_MEMORY,
-  WAIT_FOR_APPROX,
+  //WAIT_FOR_MEMORY,
+  //WAIT_FOR_APPROX,
+  WAIT_APPROX,
   CALC_WAIT_DROP
 };
 
@@ -41,6 +42,7 @@ struct Memory {
   MemoryState state;
   int photoLastIndex;
   int photoCount; // 0 initial; 1-6: x-ter Photowert nach letztem Hallwert
+  int photoTotalCount; // 0..INTMAX: Anzahl gemessener Photowerte seit Initialisierung
   timedValue photoValues[maxNumPhotoValues]; //TODO; wie viele?
   timedValue hallValue; //TODO: wie viele?
 };
@@ -51,7 +53,7 @@ struct Memory {
  **/
 struct Approximator {
   bool isValid;
-  timedValue velocity[2]; //TODO: hier oder in Approximator???
+  timedValue velocity; //TODO: hier oder in Approximator???
   timedValue acceleration;
   timedValue angle;
   int nextDropTime;
@@ -119,30 +121,108 @@ void loop() {
   switch(defaultControllerState) {
     case IDLE:
       if(val_trigger == HIGH) {
-        defaultControllerState = WAIT_FOR_MEMORY;
+        //defaultControllerState = WAIT_FOR_MEMORY;
+        defaultControllerState = WAIT_APPROX;
       } else {
         break;
       }
-    case WAIT_FOR_MEMORY:
+//    case WAIT_FOR_MEMORY:
+//      if(defaultMemory.state == READY) {
+//        defaultControllerState = WAIT_FOR_APPROX;
+//      } else {
+//        break;
+//      }
+//    case WAIT_FOR_APPROX:
+//      // TODO APPROXIMIEREN-Aufruf, update memory?
+//      
+//      if(defaultApprox.isValid) {
+//        defaultControllerState = CALC_WAIT_DROP;
+//      } else {
+//        break;
+//      }
+    case WAIT_APPROX:
       if(defaultMemory.state == READY) {
-        defaultControllerState = WAIT_FOR_APPROX;
+        // APPROX-Aufruf
+        
+        if(defaultApprox.isValid) {
+          defaultControllerState = CALC_WAIT_DROP;
+        } else {
+          break;
+        }
       } else {
         break;
-      }
-    case WAIT_FOR_APPROX:
-      // TODO APPROXIMIEREN-Aufruf, update memory?
-      if(defaultApprox.isValid) {
-        defaultControllerState = CALC_WAIT_DROP;
-      } else {
-        break;
-      }
+      }      
     case CALC_WAIT_DROP:
       // TODO calc drop time, update memory?
-      // TODO wait for drop (and update MEMORY) -> WAIT_FOR_APPROX?
+      // TODO wait for drop (and update MEMORY) -> WAIT_APPROX?
       // TODO drop -> defaultControllerState = IDLE;
       break;
   }
 }
+
+/**
+ * Scheibenposition, Geschwindigkeit und Verzögerung approximieren
+ **/
+void approximate() {
+  
+  if(defaultMemory.photoTotalCount < maxNumPhotoValues) {
+    defaultApprox.isValid = false;
+    digitalWrite(pin_out_led2, LOW);
+    return;
+  }
+  
+  float t1, t2, quot;
+  t2 = defaultMemory.photoValues[defaultMemory.photoLastIndex].time - defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-1)%maxNumPhotoValues].time;
+  for(int i = 1; i < maxNumPhotoValues-1; i++) {
+    t1 = defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-i)%maxNumPhotoValues].time - defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-i-1)%maxNumPhotoValues].time;
+    quot = t2/t1;
+    if(quot < 0.8 || quot > 1.2) {
+      defaultApprox.isValid = false;
+      digitalWrite(pin_out_led2, LOW);
+      return;
+    }
+    t2 = t1;
+  }
+  
+  
+  
+  
+  
+  //defaultApprox.isValid
+  int time = defaultMemory.photoValues[defaultMemory.photoLastIndex].time;
+  
+  defaultApprox.angle.time = time;
+  defaultApprox.angle.value = 15 + ((int)defaultMemory.hallValue.value)*180 + (defaultMemory.photoCount-1)*30;
+  
+  
+  // Geschwindigkeit
+  
+  
+  
+  
+  // Geschwindigkeit im gültigen Bereich?
+  
+  
+  
+  
+  // Verzögerung
+  
+  
+  
+  
+  defaultApprox.isValid = true;
+  digitalWrite(pin_out_led2, HIGH);
+  
+}
+
+//  timedValue velocity; //TODO: hier oder in Approximator???
+//  timedValue acceleration;
+//  timedValue angle;
+
+//  int photoLastIndex;
+//  int photoCount; // 0 initial; 1-6: x-ter Photowert nach letztem Hallwert
+//  timedValue photoValues[maxNumPhotoValues]; //TODO; wie viele?
+//  timedValue hallValue; //TODO: wie viele?
 
 /**
  * Werte einlesen.
@@ -159,9 +239,7 @@ void readInputs() {
  **/
 void initApproximator() {
   defaultApprox.isValid = false;
-  for(int i=0; i<2; i++) {
-    defaultApprox.velocity[i].time = -1;
-  }
+  defaultApprox.velocity.time = -1;
   defaultApprox.acceleration.time = -1;
   defaultApprox.angle.time = -1;  
   defaultApprox.nextDropTime = -1;
@@ -174,8 +252,9 @@ void initMemory() {
   defaultMemory.state = INIT;
   defaultMemory.photoLastIndex = maxNumPhotoValues-1;
   defaultMemory.photoCount = 0;
+  defaultMemory.photoTotalCount = 0;
   digitalWrite(pin_out_led1, LOW);
-  for(int i=0; i<7; i++) {
+  for(int i=0; i<maxNumPhotoValues; i++) {
     defaultMemory.photoValues[i].time = -1;
     //defaultMemory.photoValues[i].value = -1.0;
   }
@@ -190,11 +269,13 @@ void initMemory() {
 /**
  * Aktualisiere den Wertespeicher.
  **/
-void updateMemory() {
+boolean updateMemory() {
+  boolean newPhotoValue = false;
   switch(defaultMemory.state) {
     case INIT:
       if(val_photo != (int)defaultMemory.photoValues[defaultMemory.photoLastIndex].value) {
         addPhotoValue();
+        newPhotoValue = true;
       }
       if((defaultMemory.photoCount > 0) && (val_hall != (int)defaultMemory.hallValue.value)) {
         defaultMemory.hallValue.time = val_millis;
@@ -212,11 +293,13 @@ void updateMemory() {
         addPhotoValue();
         defaultMemory.state = READY;
         digitalWrite(pin_out_led1, HIGH);
+        newPhotoValue = true;
       }
       break;
     case READY:
       if(val_photo != (int)defaultMemory.photoValues[defaultMemory.photoLastIndex].value) {
         addPhotoValue();
+        newPhotoValue = true;
       }
       if(val_hall != (int)defaultMemory.hallValue.value) {
         defaultMemory.hallValue.time = val_millis;
@@ -225,7 +308,9 @@ void updateMemory() {
         defaultMemory.state = NOT_READY;
         digitalWrite(pin_out_led1, LOW);
       }
+      break;
   }
+  return newPhotoValue;
 }
 
 void addPhotoValue() {
@@ -233,6 +318,7 @@ void addPhotoValue() {
   defaultMemory.photoValues[defaultMemory.photoLastIndex].time = val_millis;
   defaultMemory.photoValues[defaultMemory.photoLastIndex].value = val_photo;
   defaultMemory.photoCount++;
+  defaultMemory.photoTotalCount++;
 }
 
 /**
@@ -269,5 +355,6 @@ void busyDelay(int time) {
   while(millis() < waitUntil) {
     readInputs();
     // TODO Update Memory
+    updateMemory();
   }
 }
