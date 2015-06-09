@@ -9,6 +9,10 @@
 Servo myservo;
 
 const int maxNumPhotoValues = 7;
+const int timeDelay = 391 + 2*42; //TODO!!!
+const int readDelay = 42; //TODO!!!
+const int approxDelay = 42; //TODO!!!
+const int calcDelay = 42; //TODO!!!
 
 enum ControllerState {
   IDLE,
@@ -43,7 +47,7 @@ struct Memory {
   int photoLastIndex;
   int photoCount; // 0 initial; 1-6: x-ter Photowert nach letztem Hallwert
   int photoTotalCount; // 0..INTMAX: Anzahl gemessener Photowerte seit Initialisierung
-  timedValue photoValues[maxNumPhotoValues]; //TODO; wie viele?
+  timedValue photoValues[maxNumPhotoValues];
   timedValue hallValue; //TODO: wie viele?
 };
 
@@ -53,9 +57,10 @@ struct Memory {
  **/
 struct Approximator {
   bool isValid;
-  timedValue velocity; //TODO: hier oder in Approximator???
-  timedValue acceleration;
-  timedValue angle;
+  float velocity;
+  float acceleration;
+  float angle;
+  int time;
   int nextDropTime;
 };
 
@@ -142,7 +147,7 @@ void loop() {
 //      }
     case WAIT_APPROX:
       if(defaultMemory.state == READY) {
-        // APPROX-Aufruf
+        approximate();
         
         if(defaultApprox.isValid) {
           defaultControllerState = CALC_WAIT_DROP;
@@ -153,9 +158,13 @@ void loop() {
         break;
       }      
     case CALC_WAIT_DROP:
-      // TODO calc drop time, update memory?
-      // TODO wait for drop (and update MEMORY) -> WAIT_APPROX?
-      // TODO drop -> defaultControllerState = IDLE;
+      calcDropTime();
+      if(busyWaitForDrop()) {
+        drop();
+        defaultControllerState = IDLE;
+      } else {
+        defaultControllerState = WAIT_APPROX;
+      }
       break;
   }
 }
@@ -164,13 +173,14 @@ void loop() {
  * Scheibenposition, Geschwindigkeit und Verzögerung approximieren
  **/
 void approximate() {
-  
+  // überprüfe, ob genügend aktuelle Photowerte vorliegen
   if(defaultMemory.photoTotalCount < maxNumPhotoValues) {
     defaultApprox.isValid = false;
     digitalWrite(pin_out_led2, LOW);
     return;
   }
   
+  // überprüfe, ob die Beschleunigung in Ordnung ist
   float t1, t2, quot;
   t2 = defaultMemory.photoValues[defaultMemory.photoLastIndex].time - defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-1)%maxNumPhotoValues].time;
   for(int i = 1; i < maxNumPhotoValues-1; i++) {
@@ -184,45 +194,42 @@ void approximate() {
     t2 = t1;
   }
   
-  
-  
-  
-  
-  //defaultApprox.isValid
-  int time = defaultMemory.photoValues[defaultMemory.photoLastIndex].time;
-  
-  defaultApprox.angle.time = time;
-  defaultApprox.angle.value = 15 + ((int)defaultMemory.hallValue.value)*180 + (defaultMemory.photoCount-1)*30;
+  // Berechnung des Winkels
+  defaultApprox.angle = 15 + ((int)defaultMemory.hallValue.value)*180 + (defaultMemory.photoCount-1)*30;
   
   
   // Geschwindigkeit
-  
-  
-  
+  defaultApprox.velocity = (defaultMemory.photoValues[defaultMemory.photoLastIndex].time - defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time) / 6;
   
   // Geschwindigkeit im gültigen Bereich?
-  
-  
-  
+  if(defaultApprox.velocity < 20.83 || defaultApprox.velocity > 833.33) {
+    defaultApprox.isValid = false;
+    digitalWrite(pin_out_led2, LOW);
+    return;
+  }
   
   // Verzögerung
+  defaultApprox.acceleration = ((float)(defaultMemory.photoValues[defaultMemory.photoLastIndex].time - 2*defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-3)%maxNumPhotoValues].time + defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time)) / 3;
   
-  
-  
-  
+  // fertig
+  defaultApprox.time = defaultMemory.photoValues[defaultMemory.photoLastIndex].time;
   defaultApprox.isValid = true;
   digitalWrite(pin_out_led2, HIGH);
   
 }
 
-//  timedValue velocity; //TODO: hier oder in Approximator???
-//  timedValue acceleration;
-//  timedValue angle;
-
-//  int photoLastIndex;
-//  int photoCount; // 0 initial; 1-6: x-ter Photowert nach letztem Hallwert
-//  timedValue photoValues[maxNumPhotoValues]; //TODO; wie viele?
-//  timedValue hallValue; //TODO: wie viele?
+/**
+ * Berechne die nächstmögliche Fallzeit
+ **/
+void calcDropTime() {
+  int n = (12 - (defaultApprox.angle + 15) / 30) % 12;
+  int tmin, current = millis();
+  do {
+    tmin = defaultApprox.time + (n + 0.5) * defaultApprox.velocity + (n * (n+1))/2 * defaultApprox.acceleration;
+  } while(tmin < current + timeDelay);
+  
+  defaultApprox.nextDropTime = tmin - timeDelay;
+}
 
 /**
  * Werte einlesen.
@@ -239,9 +246,7 @@ void readInputs() {
  **/
 void initApproximator() {
   defaultApprox.isValid = false;
-  defaultApprox.velocity.time = -1;
-  defaultApprox.acceleration.time = -1;
-  defaultApprox.angle.time = -1;  
+  defaultApprox.time = -1;
   defaultApprox.nextDropTime = -1;
 }
 
@@ -260,10 +265,6 @@ void initMemory() {
   }
   defaultMemory.hallValue.time = millis();
   defaultMemory.hallValue.value = digitalRead(pin_in_hall);
-  
-  //TODO
-  //defaultMemory.isReady = true;
-  //digitalWrite(pin_out_led1, HIGH);
 }
 
 /**
@@ -332,7 +333,7 @@ void drop() {
   myservo.write(17);
   for(pos = 17; pos <= 20; pos += 1) {
     myservo.write(pos);
-    delay(20);
+    busyDelay(20);
   }
   
   //debugging
@@ -341,9 +342,9 @@ void drop() {
   Serial.println(time_diff);
   
   //zurücksetzen
-  delay(50);
+  busyDelay(50);
   myservo.write(0);
-  delay(50);
+  busyDelay(50);
   myservo.write(17);
 }
 
@@ -353,8 +354,34 @@ void drop() {
 void busyDelay(int time) {
   int waitUntil = millis() + time;
   while(millis() < waitUntil) {
-    readInputs();
-    // TODO Update Memory
-    updateMemory();
+    if(millis() + readDelay < waitUntil) {
+  	  readInputs();
+      updateMemory();
+    }
+  }
+}
+
+boolean busyWaitForDrop() {
+  int current;
+  while(true) {
+    current = millis();
+    if(current >= defaultApprox.nextDropTime) {
+      return true;
+    }
+    current += readDelay;
+    if(current < defaultApprox.nextDropTime) {
+      readInputs();
+      updateMemory();
+      current += approxDelay;
+      if(current < defaultApprox.nextDropTime) {
+        approximate();
+        if(!defaultApprox.isValid) {
+          return false;
+        }
+        if(current + calcDelay < defaultApprox.nextDropTime) {
+          calcDropTime();
+        }
+      }
+    }
   }
 }
