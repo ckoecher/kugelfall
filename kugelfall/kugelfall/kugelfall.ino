@@ -59,7 +59,7 @@ struct Approximator {
   bool isValid;
   float velocity;
   float acceleration;
-  float angle;
+  int angle;
   int time;
   int nextDropTime;
 };
@@ -182,8 +182,18 @@ void approximate() {
   
   // überprüfe, ob die Beschleunigung in Ordnung ist
   float t1, t2, quot;
-  t2 = defaultMemory.photoValues[defaultMemory.photoLastIndex].time - defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-1)%maxNumPhotoValues].time;
+  t2 = millis() - defaultMemory.photoValues[defaultMemory.photoLastIndex].time;
+  t1 = defaultMemory.photoValues[defaultMemory.photoLastIndex].time - defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-1)%maxNumPhotoValues].time;
+  quot = t2/t1;
+  if(quot > 1.2) {
+    // der tatsächliche quot-Wert des aktuellen Abschnittes kann nur größer sein
+    // plötzlicher Stopp innerhalb eines 30°-Segmentes wird erkannt
+    defaultApprox.isValid = false;
+    digitalWrite(pin_out_led2, LOW);
+    return;
+  }
   for(int i = 1; i < maxNumPhotoValues-1; i++) {
+    t2 = t1;
     t1 = defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-i)%maxNumPhotoValues].time - defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-i-1)%maxNumPhotoValues].time;
     quot = t2/t1;
     if(quot < 0.8 || quot > 1.2) {
@@ -191,7 +201,6 @@ void approximate() {
       digitalWrite(pin_out_led2, LOW);
       return;
     }
-    t2 = t1;
   }
   
   // Berechnung des Winkels
@@ -226,6 +235,7 @@ void calcDropTime() {
   int tmin, current = millis();
   do {
     tmin = defaultApprox.time + (n + 0.5) * defaultApprox.velocity + (n * (n+1))/2 * defaultApprox.acceleration;
+    n += 12;
   } while(tmin < current + timeDelay);
   
   defaultApprox.nextDropTime = tmin - timeDelay;
