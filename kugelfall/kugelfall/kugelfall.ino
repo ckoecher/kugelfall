@@ -183,6 +183,24 @@ void loop() {
 }
 
 /**
+ * Debugging-Methode
+ **/
+void printPhotoValues() {
+  Serial.print("time: ");
+  Serial.println(defaultMemory.photoValues[defaultMemory.photoLastIndex].time);
+  Serial.print("photoCount: ");
+  Serial.println(defaultMemory.photoCount);
+  Serial.println("photoValue - time");
+  for(int i = 0; i < maxNumPhotoValues; i++) {
+    if((defaultMemory.photoLastIndex+1+i)%maxNumPhotoValues < defaultMemory.photoTotalCount) {
+      Serial.print(defaultMemory.photoValues[(defaultMemory.photoLastIndex+1+i)%maxNumPhotoValues].value);
+      Serial.print(" - ");
+      Serial.print(defaultMemory.photoValues[(defaultMemory.photoLastIndex+1+i)%maxNumPhotoValues].time);
+    }
+  }
+}
+
+/**
  * Scheibenposition, Geschwindigkeit und Verzögerung approximieren
  **/
 void approximate() {
@@ -198,7 +216,7 @@ void approximate() {
   t2 = millis() - defaultMemory.photoValues[defaultMemory.photoLastIndex].time;
   t1 = defaultMemory.photoValues[defaultMemory.photoLastIndex].time - defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-1)%maxNumPhotoValues].time;
   quot = t2/t1;
-  if(quot > 1.3) {//Serial.print(millis());Serial.print(" ");Serial.print(defaultMemory.photoValues[defaultMemory.photoLastIndex].time);Serial.print(" ");Serial.println(defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-1)%maxNumPhotoValues].time);
+  if(quot > 1.5) {//Serial.print(millis());Serial.print(" ");Serial.print(defaultMemory.photoValues[defaultMemory.photoLastIndex].time);Serial.print(" ");Serial.println(defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-1)%maxNumPhotoValues].time);
     // der tatsächliche quot-Wert des aktuellen Abschnittes kann nur größer sein
     // plötzlicher Stopp innerhalb eines 30°-Segmentes wird erkannt
     defaultApprox.isValid = false;
@@ -221,8 +239,8 @@ void approximate() {
   
   
   // Geschwindigkeit
-  //defaultApprox.velocity = (defaultMemory.photoValues[defaultMemory.photoLastIndex].time - defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time) / 6;
-  defaultApprox.velocity = (defaultMemory.photoValues[defaultMemory.photoLastIndex].time - defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-12)%maxNumPhotoValues].time) / 12;
+  defaultApprox.velocity = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time - (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time) / 6.0;
+  //defaultApprox.velocity = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time - (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-12)%maxNumPhotoValues].time) / 12.0;
   
   // Geschwindigkeit im gültigen Bereich?
   if(defaultApprox.velocity < 20.83 || defaultApprox.velocity > 833.33) {//Serial.println("bla4 ");Serial.println(defaultApprox.velocity);
@@ -232,13 +250,16 @@ void approximate() {
   }
   
   // Verzögerung
-  //  defaultApprox.acceleration = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time + (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time - 2*(float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-3)%maxNumPhotoValues].time) / 3;
-  defaultApprox.acceleration = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time + (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-12)%maxNumPhotoValues].time - 2*(float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time) / 6;
-/*  if(defaultApprox.acceleration < 0 || defaultApprox.acceleration > 12345) {Serial.print("bla5");Serial.println(defaultApprox.acceleration);
+  //  defaultApprox.acceleration = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time + (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time - 2*(float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-3)%maxNumPhotoValues].time) / 3.0;
+  defaultApprox.acceleration = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time + (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-12)%maxNumPhotoValues].time - 2*(float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time) / 6.0;
+  if(defaultApprox.acceleration < 0 || defaultApprox.acceleration > 12345) {Serial.print("bla5");Serial.println(defaultApprox.acceleration);
     defaultApprox.isValid = false;
     digitalWrite(pin_out_led2, LOW);
+    Serial.print("bad acceleration: ");
+    Serial.println(defaultApprox.acceleration);
+    printPhotoValues();
     return;
-  }*/
+  }
   
   
   // fertig
@@ -276,8 +297,8 @@ void readInputs() {
  **/
 void initApproximator() {
   defaultApprox.isValid = false;
-  defaultApprox.time = -1;
-  defaultApprox.nextDropTime = -1;
+  defaultApprox.time = 0;
+  defaultApprox.nextDropTime = 0;
 }
 
 /**
@@ -290,8 +311,8 @@ void initMemory() {
   defaultMemory.photoTotalCount = 0;
   digitalWrite(pin_out_led1, LOW);
   for(int i=0; i<maxNumPhotoValues; i++) {
-    defaultMemory.photoValues[i].time = -1;
-    //defaultMemory.photoValues[i].value = -1.0;
+    defaultMemory.photoValues[i].time = 0;
+    defaultMemory.photoValues[i].value = -1;
   }
   defaultMemory.hallValue.time = millis();
   defaultMemory.hallValue.value = digitalRead(pin_in_hall);
@@ -374,7 +395,7 @@ void drop() {
 /**
  * Verzögerung inklusive Erfassung der Messwerte
  **/
-void busyDelay(int time) {
+void busyDelay(unsigned long time) {
   unsigned long waitUntil = millis() + time;
   while(millis() < waitUntil) {
     readInputs();
