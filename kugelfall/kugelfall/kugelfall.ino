@@ -10,9 +10,10 @@ Servo myservo;
 
 //const int maxNumPhotoValues = 7;
 const int maxNumPhotoValues = 13;
-const int timeDelaySlow = 391 + 80;
-const int timeDelayFast = 391 + 115;
-const int timeDelay = 391 + 90; //TODO!!!
+const float velocityThreshold = 400.0;
+const int timeDelaySlow = 391/* + 83*/;
+const int timeDelayFast = 391 + 100 + 3;
+//const int timeDelay = 391 + 100 +3; //TODO!!!
 
 enum ControllerState {
   IDLE,
@@ -110,8 +111,11 @@ void setup() {
   //initialisiere den Motor
   myservo.attach(pin_out_servo);
   myservo.write(0);
+  delay(100);
+  myservo.write(15);
+  
   Serial.begin(9600);
-  delay(1000);
+  delay(100);
 }
 
 /*void loop() {
@@ -124,16 +128,17 @@ void setup() {
   Serial.println(time_end - time_start);
 }*/
 
-
+/*void loop() {
+  readInputs();
+  if(val_trigger == HIGH) {
+    drop();
+  }
+}*/
 
 /**
  * Die Hauptschleife
  **/
 void loop() {
-//  val = digitalRead(pin_in_trigger);
-//  if(val == HIGH) {
-//    drop();
-//  }
   readInputs();
   boolean newValue = updateMemory();
   switch(defaultControllerState) {
@@ -245,8 +250,8 @@ void approximate() {
   
   
   // Geschwindigkeit
-  defaultApprox.velocity = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time - (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time) / 6.0;
-  //defaultApprox.velocity = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time - (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-12)%maxNumPhotoValues].time) / 12.0;
+  //defaultApprox.velocity = (2*(float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time - (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-3)%maxNumPhotoValues].time - (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time) / 9.0;
+  defaultApprox.velocity = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time - (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-12)%maxNumPhotoValues].time) / 12.0;
   
   // Geschwindigkeit im gültigen Bereich?
   if(defaultApprox.velocity < 20.83 || defaultApprox.velocity > 833.33) {//Serial.println("bla4 ");Serial.println(defaultApprox.velocity);
@@ -256,8 +261,12 @@ void approximate() {
   }
   
   // Verzögerung
+  if(defaultApprox.velocity < velocityThreshold) {
+    defaultApprox.acceleration = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time - (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-1)%maxNumPhotoValues].time - (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-11)%maxNumPhotoValues].time + (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-12)%maxNumPhotoValues].time) / 11.0;
+  } else {
+    defaultApprox.acceleration = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time + (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-2)%maxNumPhotoValues].time - 2*(float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-1)%maxNumPhotoValues].time)/* / 6.0*/;
+  }
   //  defaultApprox.acceleration = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time + (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time - 2*(float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-3)%maxNumPhotoValues].time) / 3.0;
-  defaultApprox.acceleration = ((float)defaultMemory.photoValues[defaultMemory.photoLastIndex].time + (float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-12)%maxNumPhotoValues].time - 2*(float)defaultMemory.photoValues[(defaultMemory.photoLastIndex+maxNumPhotoValues-6)%maxNumPhotoValues].time) / 6.0;
   if(/*defaultApprox.acceleration < -5 ||*/ defaultApprox.acceleration > 12345) {//Serial.print("bla5");Serial.println(defaultApprox.acceleration);
     defaultApprox.isValid = false;
     digitalWrite(pin_out_led2, LOW);
@@ -293,10 +302,16 @@ boolean validateSpeedUp() {
  * Berechne die nächstmögliche Fallzeit
  **/
 void calcDropTime() {
+  int timeDelay;
+  if(defaultApprox.velocity < velocityThreshold) {
+    timeDelay = timeDelayFast;
+  } else {
+    timeDelay = timeDelaySlow;
+  }
   unsigned long n = (12 - (defaultApprox.angle + 15) / 30) % 12;
   unsigned long tmin, current = millis();
   do {
-    tmin = defaultApprox.time + (n + 0.5) * defaultApprox.velocity + (n * (n+1))/2 * defaultApprox.acceleration;
+    tmin = defaultApprox.time + n * defaultApprox.velocity + defaultApprox.velocity / 2 + (n * (n+1))/2 * defaultApprox.acceleration;
     n += 12;
   } while(tmin < current + timeDelay);
   defaultApprox.nextDropTime = tmin - timeDelay;
@@ -402,8 +417,8 @@ void addPhotoValue() {
  **/
 void drop() {
   //eigentliche Prozedur
-  myservo.write(17);
-  for(pos = 17; pos <= 20; pos += 1) {
+  myservo.write(15);
+  for(pos = 15; pos <= 20; pos += 1) {
     myservo.write(pos);
     busyDelay(20);
   }
@@ -412,7 +427,7 @@ void drop() {
   busyDelay(100);
   myservo.write(0);
   busyDelay(100);
-  myservo.write(17);
+  myservo.write(15);
 }
 
 /**
