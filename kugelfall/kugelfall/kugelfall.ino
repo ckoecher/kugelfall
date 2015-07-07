@@ -12,7 +12,8 @@ Servo myservo;
 const int maxNumPhotoValues = 13;
 const float velocityThreshold = 400.0;
 const int timeDelaySlow = 391/* + 83*/;
-const int timeDelayFast = 391 + 100 + 3;
+//const int timeDelayFast = 391 + 100 - 30;
+const int timeDelayFast = 391 + 100 + 8;
 //const int timeDelay = 391 + 100 +3; //TODO!!!
 
 enum ControllerState {
