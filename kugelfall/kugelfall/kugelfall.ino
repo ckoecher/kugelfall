@@ -218,6 +218,8 @@ void readInputs() {
 
 /**
  * Aktualisiere den Wertespeicher.
+ *
+ * @return true, falls neuer Photowert vorliegt, false sonst
  **/
 boolean updateMemory() {
   boolean newPhotoValue = false;
@@ -340,6 +342,8 @@ void approximate() {
 
 /**
  * Überprüft, ob die Bewegung im aktuellen 30°-Segment noch gültig ist oder schon zu lange dauert
+ *
+ * @return false, falls keine oder zu geringe Bewegung im aktuellen Segment gemessen, sonst true
  **/
 boolean validateSpeedUp() {
   float t1, t2, quot;
@@ -371,6 +375,8 @@ void calcDropTime() {
 /**
  * Warte auf den Abwurfzeitpunkt.
  * Lese währenddessen die Sensorwerte ein und akualisiere ggf. den Abwurfzeitpunkt.
+ *
+ * @return true, wenn Abwurfzeitpunkt erfolgreich erreicht, false, wenn abgebrochen werden soll
  **/
 boolean busyWaitForDrop() {
   unsigned long current;
@@ -421,6 +427,8 @@ void drop() {
 
 /**
  * Verzögerung inklusive Erfassung der Messwerte
+ *
+ * @param time Dauer der Verzögerung in Millisekunden
  **/
 void busyDelay(unsigned long time) {
   unsigned long waitUntil = millis() + time;
@@ -433,7 +441,7 @@ void busyDelay(unsigned long time) {
 /**
  * Debugging-Methode
  **/
-/*void printPhotoValues() {
+void printPhotoValues() {
   Serial.print("time: ");
   Serial.println(defaultMemory.photoValues[defaultMemory.photoLastIndex].time);
   Serial.print("photoCount: ");
@@ -446,4 +454,4 @@ void busyDelay(unsigned long time) {
       Serial.println(defaultMemory.photoValues[(defaultMemory.photoLastIndex+1+i)%maxNumPhotoValues].time);
     }
   }
-}*/
+}
